@@ -15,7 +15,7 @@ def home():
 # Tu NUEVA URL de Webhook confirmada
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1455706202494341364/WC-X0B4bVZ3E6EcZgCytv_5R9fNgaCSv5p9SZTCEn1EDocU7D1VNQuLiYdkXFcHNrK5j"
 # Cuenta de tu foto: UnderdogNBA
-RSS_URL = "https://nitter.net/UnderdogNBA/rss"
+RSS_URL = "https://nitter.poast.org/UnderdogNBA/rss"
 
 def monitorear_nba():
     last_guid = None
