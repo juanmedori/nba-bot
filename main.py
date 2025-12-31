@@ -10,37 +10,54 @@ def home(): return "Bot NBA Multi-Fuente Activo"
 
 # --- CONFIGURACIÓN ---
 FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/lesiones.json"
-# Lista de servidores espejo para mayor estabilidad
+
+# Lista extendida de servidores (si uno falla, prueba el otro)
 FUENTES_RSS = [
-    "https://nitter.net/UnderdogNBA/rss",
     "https://nitter.poast.org/UnderdogNBA/rss",
-    "https://nitter.privacydev.net/UnderdogNBA/rss"
+    "https://nitter.net/UnderdogNBA/rss",
+    "https://nitter.cz/UnderdogNBA/rss",
+    "https://nitter.privacydev.net/UnderdogNBA/rss",
+    "https://nitter.moomoo.me/UnderdogNBA/rss"
 ]
 
 def monitorear_nba():
-    last_guid = "INICIO_PRUEBA" # Forzamos el primer envío para que veas datos YA
-    print(">>> Iniciando monitoreo con respaldo multi-fuente...")
+    last_guid = "FORCE_SEND_FIRST_TIME" 
+    print(">>> Iniciando monitoreo con 5 fuentes de respaldo...", flush=True)
     
     while True:
+        exito = False
         for url in FUENTES_RSS:
             try:
-                print(f">>> Intentando leer: {url}")
-                response = requests.get(url, timeout=15)
-                if response.status_code == 200:
+                print(f">>> Intentando fuente: {url}", flush=True)
+                # Timeout corto para no quedarse trabado si el servidor está lento
+                response = requests.get(url, timeout=10)
+                
+                if response.status_code == 200 and len(response.content) > 100:
                     root = ET.fromstring(response.content)
                     item = root.find(".//item")
                     if item is not None:
                         guid = item.find("guid").text
                         titulo = item.find("title").text
+                        
                         if guid != last_guid:
-                            # ENVÍO A TU APP
-                            data = {"jugador_reporte": titulo, "hora": time.ctime()}
+                            data = {
+                                "jugador_reporte": titulo, 
+                                "hora": time.ctime(),
+                                "fuente_usada": url
+                            }
                             requests.put(FIREBASE_URL, json=data)
-                            print(f">>> ¡ÉXITO! Guardado en Firebase: {titulo}")
+                            print(f">>> ¡DATOS ENVIADOS A FIREBASE!: {titulo}", flush=True)
                             last_guid = guid
-                        break # Si tuvo éxito, sale del bucle de fuentes y espera 60s
+                        
+                        exito = True
+                        break # Salimos del bucle 'for' porque ya tuvimos éxito
+                else:
+                    print(f">>> Fuente {url} respondió vacío o con error.", flush=True)
             except Exception as e:
-                print(f">>> Servidor {url} falló, intentando el siguiente...")
+                print(f">>> Error en {url}: Servidor fuera de servicio.", flush=True)
+        
+        if not exito:
+            print(">>> [AVISO] Ninguna fuente respondió. Reintentando en 60 segundos...", flush=True)
         
         time.sleep(60)
 
