@@ -6,25 +6,18 @@ from flask import Flask
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "NBA Status Bot: Solo Lesiones y Altas/Bajas"
+def home(): return "Bot NBA: Fuente Basketball Monster Activa"
 
 # --- CONFIGURACIÓN ---
 FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com"
-# Cambiamos a RotoWire porque CBS está dando 404 en tus logs
-RSS_URL = "https://www.rotowire.com/rss/news.php?sport=NBA"
+# La versión RSS de la página que encontraste (mejor para bots)
+RSS_URL = "https://basketballmonster.com/rss/playernews.aspx"
 
-# FILTRO ESTRICTO: Solo si tiene estas palabras es un cambio de estatus
-PALABRAS_ESTATUS = [
-    "out", "questionable", "doubtful", "gtd", "probable", 
-    "injured", "injury", "surgery", "available", "status", 
-    "protocols", "return", "missing", "gametime"
-]
-
-def monitorear_estatus_limpio():
+def monitorear_monster_nba():
     last_guid = None
     headers = {'User-Agent': 'Mozilla/5.0'}
     
-    print("\n[SISTEMA] >>> Conectando a fuente estable...", flush=True)
+    print("\n[SISTEMA] >>> Conectando a Basketball Monster...", flush=True)
     
     while True:
         try:
@@ -33,47 +26,44 @@ def monitorear_estatus_limpio():
                 root = ET.fromstring(response.content)
                 items = root.findall(".//item")
                 
-                for item in reversed(items[:15]):
+                for item in reversed(items[:10]):
                     guid = item.find("guid").text
-                    titulo = item.find("title").text
+                    titulo = item.find("title").text # Ej: "Josh Giddey (Hamstring) is out"
                     desc = item.find("description").text if item.find("description") is not None else ""
                     
                     if guid != last_guid:
-                        # --- EL FILTRO DE ACERO ---
-                        # Solo procesamos si el título tiene una palabra de lesión o estatus
-                        if any(p in titulo.lower() for p in PALABRAS_ESTATUS):
-                            nombre_jugador = titulo.split(':')[0].strip()
-                            
-                            # 1. Guardar en carpeta 'noticias' (Historial 24h)
-                            noticia_data = {
-                                "tweetId": guid,
-                                "contenido": desc,
-                                "timestamp": time.time(),
-                                "hora": time.ctime()
-                            }
-                            requests.post(f"{FIREBASE_URL}/noticias.json", json=noticia_data)
-                            
-                            # 2. Guardar en carpeta 'jugadores' (Estatus Actual)
-                            jugador_id = nombre_jugador.replace(" ", "_").replace(".", "")
-                            estatus_data = {
-                                "nombre": nombre_jugador,
-                                "estatus": titulo,
-                                "ultima_actualizacion": time.ctime()
-                            }
-                            requests.patch(f"{FIREBASE_URL}/jugadores/{jugador_id}.json", json=estatus_data)
-                            
-                            print(f"[EXITO] >>> Guardado estatus real: {nombre_jugador}", flush=True)
+                        # Extraemos el nombre antes del paréntesis
+                        nombre_jugador = titulo.split('(')[0].strip() if '(' in titulo else titulo.split(':')[0].strip()
                         
+                        # 1. Carpeta 'noticias': Historial sugerido por Gemini
+                        noticia = {
+                            "tweetId": guid,
+                            "contenido": desc,
+                            "timestamp": time.time(),
+                            "fecha": time.ctime()
+                        }
+                        requests.post(f"{FIREBASE_URL}/noticias.json", json=noticia)
+                        
+                        # 2. Carpeta 'jugadores': Estatus actual
+                        jugador_id = nombre_jugador.replace(" ", "_").replace(".", "")
+                        estatus = {
+                            "nombre": nombre_jugador,
+                            "estatusActual": titulo,
+                            "ultimaActualizacion": time.ctime()
+                        }
+                        requests.patch(f"{FIREBASE_URL}/jugadores/{jugador_id}.json", json=estatus)
+                        
+                        print(f"[EXITO] >>> Reporte procesado: {nombre_jugador}", flush=True)
                         last_guid = guid
             else:
-                print(f"[ERROR] >>> Fuente no responde (Status {response.status_code})", flush=True)
+                print(f"[AVISO] >>> Error de conexión: {response.status_code}", flush=True)
                 
         except Exception as e:
-            print(f"[ERROR] >>> Técnico: {e}", flush=True)
+            print(f"[ERROR] >>> Fallo técnico: {e}", flush=True)
         
         time.sleep(180) # Revisa cada 3 minutos
 
-threading.Thread(target=monitorear_estatus_limpio, daemon=True).start()
+threading.Thread(target=monitorear_monster_nba, daemon=True).start()
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
