@@ -3,30 +3,22 @@ import xml.etree.ElementTree as ET
 import time
 import threading
 from flask import Flask
-import sys
 
-# --- WEB PARA RENDER ---
 app = Flask(__name__)
+
 @app.route('/')
 def home():
-    return "Bot NBA Activo y Vigilando"
+    return "Bot de NBA Conectado a Firebase"
 
 # --- CONFIGURACIÓN ---
-# Tu NUEVA URL de Webhook confirmada
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1455706202494341364/WC-X0B4bVZ3E6EcZgCytv_5R9fNgaCSv5p9SZTCEn1EDocU7D1VNQuLiYdkXFcHNrK5j"
-# Cuenta de tu foto: UnderdogNBA
+# Tu URL de Firebase con la extensión .json necesaria para la conexión
+FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/lesiones.json"
+# Usamos el servidor más estable de Nitter
 RSS_URL = "https://nitter.poast.org/UnderdogNBA/rss"
 
 def monitorear_nba():
     last_guid = None
-    print(">>> Iniciando hilo de monitoreo...", flush=True)
-    
-    # Mensaje de arranque para confirmar conexión en Discord
-    try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": "🏀 **¡Sistema de Alertas Conectado!** Estoy vigilando a @UnderdogNBA para tu app."})
-        print(">>> Mensaje de bienvenida enviado a Discord.", flush=True)
-    except Exception as e:
-        print(f">>> Error al enviar a Discord: {e}", flush=True)
+    print(">>> Iniciando monitoreo para la App...")
     
     while True:
         try:
@@ -39,18 +31,23 @@ def monitorear_nba():
                     titulo = item.find("title").text
                     if guid != last_guid:
                         if last_guid is not None:
-                            # Aquí es donde ocurre la magia de la notificación
-                            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"🚨 **ALERTA NBA:** {titulo}"})
-                            print(f">>> Noticia enviada: {titulo}", flush=True)
+                            # ESTO ENVÍA EL DATO DIRECTO A TU APP
+                            data = {
+                                "jugador_reporte": titulo,
+                                "ultima_actualizacion": time.ctime(),
+                                "fuente": "@UnderdogNBA"
+                            }
+                            requests.put(FIREBASE_URL, json=data)
+                            print(f">>> ÉXITO: {titulo} guardado en Firebase")
                         last_guid = guid
         except Exception as e:
-            print(f">>> Error de conexión: {e}", flush=True)
+            print(f">>> Error de sincronización: {e}")
+        
         # Revisa cada 60 segundos
         time.sleep(60)
 
 if __name__ == "__main__":
-    # Arrancar el monitoreo en un hilo separado
+    # Arranca el motor en segundo plano
     threading.Thread(target=monitorear_nba, daemon=True).start()
-    # Arrancar Flask para Render
-    print(">>> Servidor Flask arrancando...", flush=True)
+    # Mantiene vivo el servidor para Render
     app.run(host='0.0.0.0', port=10000)
