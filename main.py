@@ -5,56 +5,42 @@ import threading
 from flask import Flask
 
 app = Flask(__name__)
-
 @app.route('/')
-def home():
-    return "Bot en Fase de Diagnostico"
+def home(): return "Bot NBA Multi-Fuente Activo"
 
 # --- CONFIGURACIÓN ---
-# Tu URL de Firebase
-FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/test_conexion.json"
-NOTICIAS_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/lesiones.json"
-# Usamos una instancia de Nitter diferente y más estable
-RSS_URL = "https://nitter.privacydev.net/UnderdogNBA/rss"
+FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/lesiones.json"
+# Lista de servidores espejo para mayor estabilidad
+FUENTES_RSS = [
+    "https://nitter.net/UnderdogNBA/rss",
+    "https://nitter.poast.org/UnderdogNBA/rss",
+    "https://nitter.privacydev.net/UnderdogNBA/rss"
+]
 
 def monitorear_nba():
-    print(">>> [PASO 1] Iniciando hilo de monitoreo...", flush=True)
-    
-    # PRUEBA INICIAL: Enviar algo a Firebase sí o sí
-    try:
-        print(">>> [PASO 2] Intentando enviar test a Firebase...", flush=True)
-        r_test = requests.put(FIREBASE_URL, json={"status": "Bot Conectado", "hora": time.ctime()}, timeout=10)
-        print(f">>> [PASO 3] Respuesta de Firebase: {r_test.status_code} (Debe ser 200)", flush=True)
-    except Exception as e:
-        print(f">>> [ERROR] No se pudo conectar con Firebase: {e}", flush=True)
-
-    last_guid = "PRUEBA_INICIAL"
+    last_guid = "INICIO_PRUEBA" # Forzamos el primer envío para que veas datos YA
+    print(">>> Iniciando monitoreo con respaldo multi-fuente...")
     
     while True:
-        print(">>> [PASO 4] Buscando noticias en Underdog NBA...", flush=True)
-        try:
-            response = requests.get(RSS_URL, timeout=20)
-            if response.status_code == 200:
-                root = ET.fromstring(response.content)
-                item = root.find(".//item")
-                if item is not None:
-                    guid = item.find("guid").text
-                    titulo = item.find("title").text
-                    
-                    if guid != last_guid:
-                        print(f">>> [PASO 5] Nueva noticia detectada: {titulo}", flush=True)
-                        data = {
-                            "jugador_reporte": titulo,
-                            "ultima_actualizacion": time.ctime(),
-                            "fuente": "@UnderdogNBA"
-                        }
-                        requests.put(NOTICIAS_URL, json=data)
-                        print(">>> [PASO 6] ¡ÉXITO! Noticia guardada en Firebase.", flush=True)
-                        last_guid = guid
-            else:
-                print(f">>> [AVISO] La fuente de noticias respondió con error {response.status_code}", flush=True)
-        except Exception as e:
-            print(f">>> [ERROR] Fallo al leer noticias: {e}", flush=True)
+        for url in FUENTES_RSS:
+            try:
+                print(f">>> Intentando leer: {url}")
+                response = requests.get(url, timeout=15)
+                if response.status_code == 200:
+                    root = ET.fromstring(response.content)
+                    item = root.find(".//item")
+                    if item is not None:
+                        guid = item.find("guid").text
+                        titulo = item.find("title").text
+                        if guid != last_guid:
+                            # ENVÍO A TU APP
+                            data = {"jugador_reporte": titulo, "hora": time.ctime()}
+                            requests.put(FIREBASE_URL, json=data)
+                            print(f">>> ¡ÉXITO! Guardado en Firebase: {titulo}")
+                            last_guid = guid
+                        break # Si tuvo éxito, sale del bucle de fuentes y espera 60s
+            except Exception as e:
+                print(f">>> Servidor {url} falló, intentando el siguiente...")
         
         time.sleep(60)
 
