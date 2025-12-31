@@ -6,64 +6,47 @@ from flask import Flask
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Bot NBA: Bypass Activo"
+def home(): return "Historial NBA Activo"
 
 # --- CONFIGURACIÓN ---
-FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/lesiones.json"
-
-# Usamos el Proxy de Google para esconder a Render
-def google_proxy(url):
-    return f"https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&refresh=60&url={url}"
-
-FUENTES_RSS = [
-    google_proxy("https://nitter.poast.org/UnderdogNBA/rss"),
-    google_proxy("https://nitter.net/UnderdogNBA/rss"),
-    "https://nitter.unixfox.eu/UnderdogNBA/rss", # Fuente directa de respaldo
-    "https://nitter.perennialte.ch/UnderdogNBA/rss"
-]
+# Usamos un nodo llamado 'historial' para guardar la lista
+FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/historial.json"
+# Feed estable de CBS Sports (NBA Headlines)
+RSS_URL = "https://www.cbssports.com/rss/headlines/nba/"
 
 def monitorear_nba():
-    last_guid = "FORCE_START_001"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'}
-    
-    print(">>> Iniciando monitoreo con Bypass de Google...", flush=True)
+    last_guid = None
+    print(">>> Iniciando recolector de historial...", flush=True)
     
     while True:
-        exito_ronda = False
-        for url in FUENTES_RSS:
-            try:
-                print(f">>> Intentando con: {url[:50]}...", flush=True)
-                response = requests.get(url, headers=headers, timeout=20)
+        try:
+            # CBS no bloquea a Render como lo hace Twitter
+            response = requests.get(RSS_URL, timeout=15)
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                # Tomamos las últimas noticias del feed
+                items = root.findall(".//item")
                 
-                # Si Google nos devuelve un 200, tenemos la noticia
-                if response.status_code == 200 and len(response.content) > 300:
-                    root = ET.fromstring(response.content)
-                    item = root.find(".//item")
-                    if item is not None:
-                        guid = item.find("guid").text
-                        titulo = item.find("title").text
-                        
-                        if guid != last_guid:
-                            # ENVÍO INMEDIATO A FIREBASE
-                            res = requests.put(FIREBASE_URL, json={
-                                "jugador_reporte": titulo,
-                                "hora": time.ctime(),
-                                "estado": "ACTUALIZADO"
-                            })
-                            print(f">>> ¡CONEXIÓN ROMPIÓ EL BLOQUEO!: {titulo}", flush=True)
-                            last_guid = guid
-                        
-                        exito_ronda = True
-                        break
-                else:
-                    print(f">>> Fuente no disponible (Status {response.status_code})", flush=True)
-            except Exception as e:
-                print(f">>> Error en esta fuente, probando la siguiente...", flush=True)
+                for item in reversed(items[:10]): # Procesamos las 10 más recientes
+                    guid = item.find("guid").text
+                    titulo = item.find("title").text
+                    
+                    if guid != last_guid:
+                        # Guardamos la noticia con su hora exacta
+                        data = {
+                            "reporte": titulo,
+                            "timestamp": time.time(),
+                            "fecha": time.ctime()
+                        }
+                        # POST añade a la lista sin borrar lo anterior
+                        requests.post(FIREBASE_URL, json=data)
+                        print(f">>> GUARDADO: {titulo}", flush=True)
+                        last_guid = guid
+        except Exception as e:
+            print(f">>> Error al recolectar: {e}", flush=True)
         
-        if not exito_ronda:
-            print(">>> [ALERTA] Nitter sigue bloqueando incluso con Proxy. Reintentando en 60s...", flush=True)
-        
-        time.sleep(60)
+        # Revisa cada 5 minutos para ahorrar recursos
+        time.sleep(300)
 
 if __name__ == "__main__":
     threading.Thread(target=monitorear_nba, daemon=True).start()
