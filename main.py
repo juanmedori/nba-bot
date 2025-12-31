@@ -17,9 +17,9 @@ FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/lesiones.js
 RSS_URL = "https://nitter.poast.org/UnderdogNBA/rss"
 
 def monitorear_nba():
-    # Cambiamos None por "0" para forzar el primer envío
-    last_guid = "0" 
-    print(">>> Iniciando monitoreo de PRUEBA...")
+    # Cambia last_guid = None por esto:
+    last_guid = "PRUEBA_INICIAL" 
+    print(">>> Forzando primer envío a Firebase...")
     
     while True:
         try:
@@ -31,15 +31,15 @@ def monitorear_nba():
                     guid = item.find("guid").text
                     titulo = item.find("title").text
                     
+                    # Al ser last_guid distinto a guid, enviará el último tweet de inmediato
                     if guid != last_guid:
-                        # Esto enviará lo que sea que esté de primero ahora mismo
                         data = {
                             "jugador_reporte": titulo,
                             "ultima_actualizacion": time.ctime(),
                             "fuente": "@UnderdogNBA"
                         }
                         requests.put(FIREBASE_URL, json=data)
-                        print(f">>> ÉXITO INMEDIATO: {titulo} enviado.")
+                        print(f">>> ÉXITO: {titulo} guardado.")
                         last_guid = guid
         except Exception as e:
             print(f">>> Error de sincronización: {e}")
