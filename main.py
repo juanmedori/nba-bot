@@ -6,48 +6,78 @@ from flask import Flask
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Historial NBA Activo"
+def home(): return "Historial CBS Player News 24h Activo"
 
 # --- CONFIGURACIÓN ---
-# Usamos un nodo llamado 'historial' para guardar la lista
-FIREBASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/historial.json"
-# Feed estable de CBS Sports (NBA Headlines)
-RSS_URL = "https://www.cbssports.com/rss/headlines/nba/"
+# Carpeta donde se guardará la lista de reportes en Firebase
+FIREBASE_BASE_URL = "https://nba-injuries-app-default-rtdb.firebaseio.com/cbs_player_news"
+FIREBASE_POST_URL = f"{FIREBASE_BASE_URL}.json"
 
-def monitorear_nba():
+# --- LA FUENTE CORRECTA ---
+# Este es el RSS específico para la sección "Player News" de CBS Fantasy
+RSS_URL = "https://www.cbssports.com/rss/fantasy/basketball/player-news/"
+
+def limpiar_historial_viejo():
+    """Borra reportes con más de 24 horas de antigüedad"""
+    try:
+        ahora = time.time()
+        # 24 horas * 60 minutos * 60 segundos
+        limite_24h = ahora - (24 * 3600)
+        
+        # Leemos todo el historial actual
+        response = requests.get(FIREBASE_POST_URL)
+        if response.status_code == 200 and response.json():
+            datos = response.json()
+            # Revisamos cada noticia guardada
+            for id_noticia, info in datos.items():
+                # Si el timestamp es más viejo que el límite de 24h, lo borramos
+                if info.get('timestamp', 0) < limite_24h:
+                    requests.delete(f"{FIREBASE_BASE_URL}/{id_noticia}.json")
+                    print(f">>> Limpieza: Borrada noticia antigua {id_noticia}")
+    except Exception as e:
+        print(f">>> Error durante la limpieza automática: {e}")
+
+def monitorear_cbs_player_news():
     last_guid = None
-    print(">>> Iniciando recolector de historial...", flush=True)
+    print(">>> Iniciando capturador de CBS Player News (Historial 24h)...", flush=True)
     
     while True:
         try:
-            # CBS no bloquea a Render como lo hace Twitter
             response = requests.get(RSS_URL, timeout=15)
             if response.status_code == 200:
                 root = ET.fromstring(response.content)
-                # Tomamos las últimas noticias del feed
                 items = root.findall(".//item")
                 
-                for item in reversed(items[:10]): # Procesamos las 10 más recientes
+                # Revisamos los últimos 10 reportes (de más viejo a más nuevo)
+                for item in reversed(items[:10]): 
                     guid = item.find("guid").text
                     titulo = item.find("title").text
+                    # CBS a veces pone la descripción del reporte en la etiqueta 'description'
+                    descripcion = item.find("description").text if item.find("description") is not None else ""
                     
                     if guid != last_guid:
-                        # Guardamos la noticia con su hora exacta
+                        # Creamos el objeto de la noticia
                         data = {
-                            "reporte": titulo,
-                            "timestamp": time.time(),
-                            "fecha": time.ctime()
+                            "titulo": titulo,
+                            "detalle": descripcion, # El texto completo del reporte
+                            "timestamp": time.time(), # Para saber cuándo borrarla
+                            "hora_legible": time.ctime(),
+                            "fuente": "CBS Player News"
                         }
-                        # POST añade a la lista sin borrar lo anterior
-                        requests.post(FIREBASE_URL, json=data)
-                        print(f">>> GUARDADO: {titulo}", flush=True)
+                        # Usamos POST para añadir a la lista en Firebase
+                        requests.post(FIREBASE_POST_URL, json=data)
+                        print(f">>> NUEVO REPORTE CBS GUARDADO: {titulo}", flush=True)
                         last_guid = guid
+            
+            # Ejecutamos la limpieza en cada ciclo
+            limpiar_historial_viejo()
+            
         except Exception as e:
-            print(f">>> Error al recolectar: {e}", flush=True)
+            print(f">>> Error de conexión con CBS: {e}", flush=True)
         
-        # Revisa cada 5 minutos para ahorrar recursos
-        time.sleep(300)
+        # Revisamos cada 3 minutos
+        time.sleep(180)
 
 if __name__ == "__main__":
-    threading.Thread(target=monitorear_nba, daemon=True).start()
+    threading.Thread(target=monitorear_cbs_player_news, daemon=True).start()
     app.run(host='0.0.0.0', port=10000)
